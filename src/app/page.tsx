@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import { motion } from "motion/react";
 import {
@@ -29,7 +29,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import {
   categories,
-  resources as initialResources,
   getFavicon,
   getHostname,
   type Category,
@@ -142,39 +141,24 @@ function Grid({ items, tabKey }: { items: Resource[]; tabKey: string }) {
   );
 }
 
-function deriveName(url: string): string {
-  const host = getHostname(url);
-  const root = host.split(".")[0] ?? host;
-  return root.charAt(0).toUpperCase() + root.slice(1);
-}
-
-const STORAGE_KEY = "resource-library:added";
-
 export default function Home() {
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<Category>("tools");
-  const [addedResources, setAddedResources] = useState<Resource[]>([]);
-  const [hydrated, setHydrated] = useState(false);
+  const [resources, setResources] = useState<Resource[]>([]);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setAddedResources(JSON.parse(raw) as Resource[]);
-    } catch {}
-    setHydrated(true);
+    let active = true;
+    fetch("/api/resources")
+      .then((r) => r.json() as Promise<{ resources: Resource[] }>)
+      .then((data) => {
+        if (active) setResources(data.resources ?? []);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
   }, []);
 
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(addedResources));
-    } catch {}
-  }, [addedResources, hydrated]);
-
-  const resources = useMemo(
-    () => [...addedResources, ...initialResources],
-    [addedResources],
-  );
   const q = query.trim().toLowerCase();
 
   const matches = (r: Resource) =>
@@ -183,13 +167,12 @@ export default function Home() {
     r.description.toLowerCase().includes(q) ||
     getHostname(r.url).toLowerCase().includes(q);
 
-  const handleAdd = (url: string, category: Category) => {
-    if (resources.some((r) => r.url === url)) return;
-    setAddedResources((prev) => [
-      { name: deriveName(url), url, description: "", category },
-      ...prev,
-    ]);
-    setTab(category);
+  const handleAdd = (added: Resource) => {
+    setResources((prev) => {
+      if (prev.some((r) => r.url === added.url)) return prev;
+      return [added, ...prev];
+    });
+    setTab(added.category);
   };
 
   return (
